@@ -1,703 +1,1264 @@
 /*
-https://t.me/Ariszy8028
-
-1、今日头条极速版，爱思助手下载7.9.9，脚本获取ck运行
-2、今日头条极速版直接升级最新版本，抓包打开右下角包宝箱及视频奖励
-
-两个版本同时运行，金币叠加
-
-邀请码：1980436898
-
-作者：执意Ariszy
-目前包含：
-签到
-开首页宝箱
-读文章30篇（具体效果自测）
-开农场宝箱
-农场浇水
-done 农场离线奖励(农场宝箱开完后，需要进农场再运行脚本才能开，有点问题)
-##通过农场浇水激活上线，达到获取理想奖励目的，目前测试每天的离线奖励足够开启农场5个宝箱，不需要做其他任务，具体情况看后期是否需要，再添加除虫，开地，施肥，三餐奖励以及农场签到活动
-20点睡觉，获取完全后（3600）或睡觉12小时，自动醒来（防止封号）
-自动收取睡觉金币
+IOS/安卓: 今日头条极速版
 
 
-脚本初成，非专业人士制作，欢迎指正
+老用户每天几毛，新用户可能收益高点
+普通版定时： 1-59/15 6-23 * * *
+激进版定时： 1-59/5 * * * *
+多用户跑的时间会久一点，自己看着改定时吧
 
-#右上角签到即可获取签到cookie
-#进一次农场即可获取农场cookie
-#读文章弹出金币获取读文章cookie
+自定义UA：捉包拿到自己的UA，填到变量jrttjsbUA里，不填默认用安卓UA
+自定义每次运行阅读文章的数量：填到变量jrttjsbReadNum，不填默认10篇
+农场和种树任务：默认不做，需要做的，把变量jrttjsbFarm填为1
 
-[mitm]
+V2P重写：
+[task_local]
+#今日头条极速版
+1-59/15 6-23 * * *  https://raw.githubusercontent.com/leafxcy/JavaScript/main/jrttjsb.js, tag=今日头条极速版, enabled=true
+[rewrite_local]
+luckycat\/lite\/v1\/task\/page_data url script-request-header https://raw.githubusercontent.com/leafxcy/JavaScript/main/jrttjsb.js
+[MITM]
+#每个人的域名不同，都放进去MITM吧，还捉不到就自行捉包填写
+hostname = *.snssdk.com
 hostname = *.toutiaoapi.com
 
-#圈x
-[rewrite local]
-\/score_task\/v1\/task\/(sign_in|get_read_bonus) url script-request-header https://raw.githubusercontent.com/tigax/js/main/jrtt.js
-\/ttgame\/game_farm\/home_info url script-request-header https://raw.githubusercontent.com/tigax/js/main/jrtt.js
-[task]
-5,35 8-23 * * * https://raw.githubusercontent.com/tigax/js/main/jrtt.js, tag=今日头条极速版, enabled=true
-#loon
-http-request \/score_task\/v1\/task\/(sign_in|get_read_bonus) script-path=https://raw.githubusercontent.com/tigax/js/main/jrtt.js, requires-body=true, timeout=10, tag=今日头条极速版sign
-http-request \/ttgame\/game_farm\/home_info script-path=https://raw.githubusercontent.com/tigax/js/main/jrtt.js, requires-body=true, timeout=10, tag=今日头条极速版farm
-cron "5,35 8-23 * * *" script-path=https://raw.githubusercontent.com/tigax/js/main/jrtt.js tag=今日头条极速版
-#surge
-jrttsign = type=http-request,pattern=\/score_task\/v1\/task\/(sign_in|get_read_bonus),requires-body=1,max-size=0,script-path=https://raw.githubusercontent.com/tigax/js/main/jrtt.js,script-update-interval=0
-jrttfarm = type=http-request,pattern=\/ttgame\/game_farm\/home_info,requires-body=1,max-size=0,script-path=https://raw.githubusercontent.com/tigax/js/main/jrtt.js,script-update-interval=0
-jrtt = type=cron,cronexp="5,35 8-23 * * *",wake-system=1,script-path=https://raw.githubusercontent.com/tigax/js/main/jrtt.js,script-update-interval=0
+青龙把极速版捉包里面的cookie放到jrttjsbHeader里，多账户用@隔开
 */
 
-const $ = new Env('今日头条极速版')
-const notify = $.isNode() ?require('./sendNotify') : '';
-$.idx = ($.idx = ($.getval("jrttcount") || "1") - 1) > 0 ? `${$.idx + 1}` : ""; // 账号扩展字符
-const signurlArr = [],signkeyArr=[]
-const farmurlArr = [],farmkeyArr=[]
-const readurlArr = [],readkeyArr=[]
-let signurl = $.getdata('signurl')
-let signkey = $.getdata('signkey')
+const jsname = '今日头条极速版'
+const $ = Env(jsname)
+const notifyFlag = 1; //0为关闭通知，1为打开通知,默认为1
+const logDebug = 0
 
-let farmurl = $.getdata('farmurl')
-let farmkey = $.getdata('farmkey')
+//const notify = $.isNode() ? require('./sendNotify') : '';
+let notifyStr = ''
 
-let readurl = $.getdata('readurl')
-let readkey = $.getdata('readkey')
-//var articles =''
-let tz = ($.getval('tz') || '1');//0关闭通知，1默认开启
-const invit=1;//新用户自动邀请，0关闭，1默认开启
-const logs =0;//0为关闭日志，1为开启
-var coins=''
-var article =''
-var collect = ''
-var invited =''
-var hour=''
-var minute=''
-if ($.isNode()) {
-   hour = new Date( new Date().getTime() + 8 * 60 * 60 * 1000 ).getHours();
-   minute = new Date( new Date().getTime() + 8 * 60 * 60 * 1000 ).getMinutes();
-}else{
-   hour = (new Date()).getHours();
-   minute = (new Date()).getMinutes();
-}
-//CK运行
+let rndtime = "" //毫秒
+let httpResult //global buffer
 
-let isGetCookie = typeof $request !== 'undefined'
-if (isGetCookie) {
-   GetCookie();
-   $.done()
-} 
-if ($.isNode()) {
-//sign
-  if (process.env.JRTTSIGNURL && process.env.JRTTSIGNURL.indexOf('#') > -1) {
-   signurl = process.env.JRTTSIGNURL.split('#');
-   console.log(`您选择的是用"#"隔开\n`)
-  }
-  else if (process.env.JRTTSIGNURL && process.env.JRTTSIGNURL.indexOf('\n') > -1) {
-   signurl = process.env.JRTTSIGNURL.split('\n');
-   console.log(`您选择的是用换行隔开\n`)
-  } else {
-   signurl = process.env.JRTTSIGNURL.split()
-  };
-  if (process.env. JRTTSIGNKEY&& process.env.JRTTSIGNKEY.indexOf('#') > -1) {
-   signkey = process.env.JRTTSIGNKEY.split('#');
-  }
-  else if (process.env.JRTTSIGNKEY && process.env.JRTTSIGNKEY.split('\n').length > 0) {
-   signkey = process.env.JRTTSIGNKEY.split('\n');
-  } else  {
-   signkey = process.env.JRTTSIGNKEY.split()
-  };
-//farm
-if (process.env.JRTTFARMURL && process.env.JRTTFARMURL.indexOf('#') > -1) {
-   farmurl = process.env.JRTTFARMURL.split('#');
-   console.log(`您选择的是用"#"隔开\n`)
-  }
-  else if (process.env.JRTTFARMURL && process.env.JRTTFARMURL.indexOf('\n') > -1) {
-   farmurl = process.env.JRTTFARMURL.split('\n');
-   console.log(`您选择的是用换行隔开\n`)
-  } else {
-   farmurl = process.env.JRTTFARMURL.split()
-  };
-  if (process.env. JRTTFARMKEY&& process.env.JRTTFARMKEY.indexOf('#') > -1) {
-   farmkey = process.env.JRTTFARMKEY.split('#');
-  }
-  else if (process.env.JRTTFARMKEY && process.env.JRTTFARMKEY.split('\n').length > 0) {
-   farmkey = process.env.JRTTFARMKEY.split('\n');
-  } else  {
-   farmkey = process.env.JRTTFARMKEY.split()
-  };
-//read
-if (process.env.JRTTREADURL && process.env.JRTTREADURL.indexOf('#') > -1) {
-   readurl = process.env.JRTTREADURL.split('#');
-   console.log(`您选择的是用"#"隔开\n`)
-  }
-  else if (process.env.JRTTREADURL && process.env.JRTTREADURL.indexOf('\n') > -1) {
-   readurl = process.env.JRTTREADURL.split('\n');
-   console.log(`您选择的是用换行隔开\n`)
-  } else {
-   readurl = process.env.JRTTREADURL.split()
-  };
-  if (process.env. JRTTREADKEY&& process.env.JRTTREADKEY.indexOf('#') > -1) {
-   readkey = process.env.JRTTREADKEY.split('#');
-  }
-  else if (process.env.JRTTREADKEY && process.env.JRTTREADKEY.split('\n').length > 0) {
-   readkey = process.env.JRTTREADKEY.split('\n');
-  } else  {
-   readkey = process.env.JRTTREADKEY.split()
-  };
-//sign
-  Object.keys(signurl).forEach((item) => {
-        if (signurl[item]) {
-          signurlArr.push(signurl[item])
-        }
-    });
-    Object.keys(signkey).forEach((item) => {
-        if (signkey[item]) {
-          signkeyArr.push(signkey[item])
-        }
-    });
-//farm
-Object.keys(farmurl).forEach((item) => {
-        if (farmurl[item]) {
-          farmurlArr.push(farmurl[item])
-        }
-    });
-    Object.keys(farmkey).forEach((item) => {
-        if (farmkey[item]) {
-          farmkeyArr.push(signkey[item])
-        }
-    });
-//read
-Object.keys(readurl).forEach((item) => {
-        if (readurl[item]) {
-          readurlArr.push(readurl[item])
-        }
-    });
-    Object.keys(readkey).forEach((item) => {
-        if (readkey[item]) {
-          readkeyArr.push(readkey[item])
-        }
-    });
-    console.log(`============ 脚本执行-国际标准时间(UTC)：${new Date().toLocaleString()}  =============\n`)
-    console.log(`============ 脚本执行-北京时间(UTC+8)：${new Date(new Date().getTime() + 8 * 60 * 60 * 1000).toLocaleString()}  =============\n`)
- } else {
-    signurlArr.push($.getdata('signurl'))
-    signkeyArr.push($.getdata('signkey'))
-    farmurlArr.push($.getdata('farmurl'))
-    farmkeyArr.push($.getdata('farmkey'))
-    readurlArr.push($.getdata('readurl'))
-    readkeyArr.push($.getdata('readkey'))
-    let jrttcount = ($.getval('jrttcount') || '1');
-  for (let i = 2; i <= jrttcount; i++) {
-    signurlArr.push($.getdata(`signurl${i}`))
-    signkeyArr.push($.getdata(`signkey${i}`))
-    farmurlArr.push($.getdata(`farmurl${i}`))
-    farmkeyArr.push($.getdata(`farmkey${i}`))
-    readurlArr.push($.getdata(`readurl${i}`))
-    readkeyArr.push($.getdata(`readkey${i}`))
-  }
-}
+let host = 'i.snssdk.com'
+let hostname = 'https://' + host
+
+let userAgent = ($.isNode() ? process.env.jrttjsbUA : $.getdata('jrttjsbUA')) || 'Dalvik/2.1.0 (Linux; U; Android 7.1.2; VOG-AL10 Build/HUAWEIVOG-AL10) NewsArticle/8.2.8 tt-ok/3.10.0.2';
+let userAgentArr = []
+let userHeader = ($.isNode() ? process.env.jrttjsbHeader : $.getdata('jrttjsbHeader')) || '';
+let userHeaderArr = []
+let jrttjsbFarm = ($.isNode() ? process.env.jrttjsbFarm : $.getdata('jrttjsbFarm')) || 0;
+
+let userIdx = 0
+let UAcount = 0
+let userStatus = []
+let maxReadPerRun = ($.isNode() ? process.env.jrttjsbReadNum : $.getdata('jrttjsbReadNum')) || 10;
+let readList = []
+
+let validList = []
+let adIdList = [26, 181, 186, 187, 188, 189, 190, 195, 210, 214, 216, 225, 308, 324, 327, 329]
+        
+///////////////////////////////////////////////////////////////////
+
 !(async () => {
-if (!signurlArr[0]) {
-    $.msg($.name, '【提示】请先获取今日头条极速版一cookie')
-    return;
-  }
-   console.log(`------------- 共${signurlArr.length}个账号----------------\n`)
-  for (let i = 0; i < signurlArr.length; i++) {
-    if (signurlArr[i]) {
-      other = ''
-      signurl = signurlArr[i];
-      signkey = signkeyArr[i];
-      farmurl = farmurlArr[i];
-      farmkey = farmkeyArr[i];
-      readurl = readurlArr[i];
-      readkey = readkeyArr[i];
-      $.index = i + 1;
-      console.log(`\n开始【今日头条极速版${$.index}】`)
-      await invite()
-      await userinfo()
-      await profit()
-      await sign_in()
-      await openbox()
-      if(readurl){
-      await reading()
-      }
-      await farm_sign_in()
-      await openfarmbox()
-      await landwarer()
-      await double_reward()
-      await sleepstatus()
-      await control()
-      //await sleepstart()
-      //await sleepstop()
-      //await collectcoins(coins)
-      await showmsg()
-  }
- }
+
+    if(typeof $request !== "undefined")
+    {
+        await GetRewrite()
+    }
+    else
+    {
+        await showUpdateMsg()
+        
+        if(!(await checkEnv())) {
+            return
+        }
+        
+        await initAccountInfo()
+        await RunMultiUser()
+    }
+  
+
 })()
-    .catch((e) => $.logErr(e))
-    .finally(() => $.done())
-function GetCookie() {
- if($request&&$request.url.indexOf("info")>=0) {
-  const farmurlVal = $request.url.split(`?`)[1]
-    if (farmurlVal) $.setdata(farmurlVal,
-`farmurl${$.idx}`)
-    $.log(`[${$.jsname}] 获取farm请求: 成功,farmirlVal: ${farmurl}`)
-    $.msg(`获取farmurl: 成功🎉`, ``)
-   const jrttfarmKey = JSON.stringify($request.headers)
-$.log(jrttfarmKey)
-  if(jrttfarmKey)        $.setdata(jrttfarmKey,`farmkey${$.idx}`)
-    $.log(`[${$.jsname + $.idx}] 获取farm请求: 成功,jrttfarmKey: ${farmkey}`)
-    $.msg(`获取farmkey: 成功🎉`, ``)
-}
-  if($request&&$request.url.indexOf("sign_in")>=0) {
-  const signurlVal = $request.url.split(`?`)[1]
-    if (signurlVal) $.setdata(signurlVal,
-`signurl${$.idx}`)
-    $.log(`[${$.jsname + $.idx}] 获取sign请求: 成功,signurlVal: ${signurl}`)
-    $.msg(`获取signurl: 成功🎉`, ``)
-   const jrttsignKey = JSON.stringify($request.headers)
-//$.log(jrttsignKey)
-  if(jrttsignKey.indexOf("STUB")>=0)
-    $.setdata(jrttsignKey,`signkey${$.idx}`)
-    $.log(`[${$.jsname + $.idx}] 获取sign请求: 成功,jrttsignKey: ${signkey}`)
-    $.msg(`获取signkey: 成功🎉`, ``)
+.catch((e) => $.logErr(e))
+.finally(() => $.done())
+
+function showUpdateMsg() {
+    console.log('\n2021.12.14 15:40 更新：默认不做农场和浇水任务，收益太低。可以自定义每次阅读的文章数量，填在变量jrttjsbReadNum里\n')
 }
 
-if($request&&$request.url.indexOf("get_read_bonus")>=0) {
-  const readurlVal = $request.url.split(`?`)[1]
-
-  //const article = readurlVal.replace(/\d{3}$/,Math.floor(Math.random()*1000));
-//article = article.replace(/\d{3}$/, (Math.random()*1e3).toFixed(0).padStart(3,"0"));
-
-    if(article) $.setdata(article,
-'article')
-    if (readurlVal) $.setdata(readurlVal,
-`readurl${$.idx}`)
-    $.log(`[${jsname + $.idx}] 获取read请求: 成功,readurlVal: ${readurl}`)
-    $.msg(`获取readurl: 成功🎉`, ``)
-   const jrttreadKey = JSON.stringify($request.headers)
-$.log(jrttreadKey)
-  if(jrttreadKey)        $.setdata(jrttreadKey,`readkey${$.idx}`)
-    $.log(`[${jsname}] 获取read请求: 成功,jrttreadKey: ${readkey}`)
-    $.msg(`获取readkey: 成功🎉`, ``)
+//通知
+async function showmsg() {
+    
+    notifyBody = jsname + "运行通知\n\n" + notifyStr
+    
+    if (notifyFlag != 1) {
+        console.log(notifyBody);
     }
-  }
-function sign_in() {
-return new Promise((resolve, reject) => {
-  let sign_inurl ={
-    url: `https://api3-normal-c-lq.snssdk.com/score_task/v1/task/sign_in/?${signurl}`,
-    headers :JSON.parse(signkey),
-      timeout: 60000,
-}
 
-   $.post(sign_inurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-       if(logs) $.log(data)
-      if(result.err_no == 0) {
-          other +='📣首页签到\n'
-          other +='签到完成\n'
-          other +='获得'+result.data.score_amount+'金币\n'
-          other +='连续签到'+result.data.sign_times+'天\n'
-  
-}else{
-          other +='📣首页签到\n'
-          other +='今日已完成签到\n'
-           }
-          resolve()
-    })
-   })
-  } 
-
-async function control(){
-   if(collect == 0){
-      await sleepstart();
-   }
-   if(collect == 1){
-      await sleepstop();
-      await collectcoins(coins);
-   }
-   if(collect == 2){
-      //$.log('no opreation')
-      other +='\n\n生前何必久睡，死后自会长眠\n'
-   }
-   if(collect == 3){
-      await collectcoins(coins);
-   }
-   if(invited == 4 && invit== 1){
-      await invitation();
-   }
-}
-function invite() {
-return new Promise((resolve, reject) => {
-  let inviteurl ={
-    url: `https://api3-normal-c-lq.snssdk.com/score_task/v1/user/new_tabs/?${signurl}`,
-    headers :JSON.parse(signkey),
-      timeout: 60000,
-}
-
-   $.get(inviteurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-      if(logs)$.log(data)
-      if(result.data.section[10].key=='mine_input_code') {
-          invited=4;
-           }else{
-          invited=5;
-}
-          resolve()
-    })
-   })
-  } 
-function invitation() {
-return new Promise((resolve, reject) => {
-  let invitatonurl ={
-    url: `https://api3-normal-c-lq.snssdk.com/luckycat/lite/v1/invite/post_invite_code/?_request_from=web&device_platform=ios&ac=4G&${signurl}`,
-    headers :JSON.parse(farmkey),
-      timeout: 60000,
-    body: JSON.stringify({"invitecode" : "1980436898"})
-}
-
-   $.post(invitatonurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-       if(logs)$.log(data)
-          resolve()
-    })
-   })
-  } 
-
-function userinfo() {
-return new Promise((resolve, reject) => {
-  let userinfourl ={
-    url: `https://api3-normal-c-hl.snssdk.com/passport/account/info/v2/?${signurl}`,
-    headers :JSON.parse(signkey),
-      timeout: 60000,
-}
-
-   $.get(userinfourl,(error, response, data) =>{
-     const result = JSON.parse(data)
-      //$.log(signurl+'\n'+signkey+'\n'+farmurl+'\n'+farmkey+'\n'+readurl+'\n'+readkey)
-       if(logs) $.log(data)
-      if(result.message == 'success') {
-          other +='🎉'+result.data.name+'\n'
-  
-}     else if(result.message == 'error'){
-          other += '⚠️异常:'+result.data.description+'\n'
-           }else{
-          other += '⚠️异常'
-}
-          resolve()
-    })
-   })
-  } 
-
-function profit() {
-return new Promise((resolve, reject) => {
-  let profiturl ={
-    url: `https://api3-normal-c-lq.snssdk.com/score_task/v1/user/info/?${signurl}`,
-    headers :JSON.parse(signkey),
-      timeout: 60000,
-}
-
-   $.get(profiturl,(error, response, data) =>{
-     const result = JSON.parse(data)
-        if(logs)$.log(data)
-      if(result.err_no == 0) {
-          other +='🎉金币收益:'+result.data.score.amount+'\n🎉估计兑换现金:'+(result.data.score.amount/30000).toFixed(2)+'\n🎉'+'现金收益:'+result.data.cash.amount+'\n'      
-}else{
-          other += '⚠️异常\n'
-           }
-          resolve()
-    })
-   })
-  } 
-
-//文章阅读30篇每天
-function reading() {
-const articles = readurl.replace(/\d{3}$/,Math.floor(Math.random()*1000));
-return new Promise((resolve, reject) => {
-  let readurl ={
-    url: `https://api3-normal-c-lq.snssdk.com/score_task/v1/task/get_read_bonus/?${articles}`,
-    headers :JSON.parse(signkey),
-      timeout: 60000,
-}
-
-   $.post(readurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-      if(logs)  $.log(data)
-      other +='📣文章阅读\n'
-      if(result.err_no == 0) {
-          other +='阅读完成'
-          other +='获得'+result.data.score_amount+'金币\n'
-          other +='阅读进度'+result.data.icon_data.done_times+'/'+result.data.icon_data.read_limit+'\n'
-      }
-       if(result.err_no == 4){
-          other +='文章阅读已达上限\n'
-        }
-       if(result.err_no == 1028){
-          other +='这篇文章已经读过了\n'
-        }
-          resolve()
-    })
-   })
-  } 
-//农场签到
-function farm_sign_in() {
-return new Promise((resolve, reject) => {
-  let farm_sign_inurl ={
-    url: `https://api3-normal-c-lq.snssdk.com/ttgame/game_farm/reward/sign_in?watch_ad=1&${signurl}`,
-    headers :JSON.parse(farmkey),
-      timeout: 60000,
-}
-
-   $.get(farm_sign_inurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-       if(logs) $.log(data)
-       other +='📣农场签到\n'
-      if(result.status_code == 0) {
-          other +='签到完成\n'
-         
-}else{
-          other +=result.message+'\n'
-           }
-          resolve()
-    })
-   })
-  } 
-
-function openbox() {
-return new Promise((resolve, reject) => {
-  let openboxurl ={
-    url: `https://it-lq.snssdk.com/score_task/v1/task/open_treasure_box/?${signurl}`,
-    headers :JSON.parse(signkey),
-      timeout: 60000,
-}
-
-   $.post(openboxurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-       if(logs) $.log(data)
-       other +='📣首页宝箱\n'
-      if(result.err_no == 0) {
-        other += '开启成功'
-        other += '获得金币'+result.data.score_amount+'个\n'
-        }
-      else{
-         if(result.err_no == 9){
-        other += result.err_tips+'\n'
-        }else{
-        other +="不在开宝箱时间\n"
-           }
+    if (notifyFlag == 1) {
+        $.msg(notifyBody);
+        //if ($.isNode()){await notify.sendNotify($.name, notifyBody );}
     }
-          resolve()
-    })
-   })
-  }  
-
-
-function openfarmbox() {
-return new Promise((resolve, reject) => {
-  let openfarmboxurl ={
-    url: `https://api3-normal-c-lq.snssdk.com/ttgame/game_farm/box/open?${farmurl}`,
-    headers :JSON.parse(farmkey),
-      timeout: 60000,
 }
 
-   $.get(openfarmboxurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-       if(logs) $.log(data)
-       other +='📣农场宝箱\n'
-      if(result.status_code == 0) {
-        other += "第"+(5-result.data.box_num)+"开启成功"
-        other += "还可以开启"+result.data.box_num+"个\n"
+async function GetRewrite() {
+    if($request.url.indexOf('luckycat/lite/v1/task/page_data') > -1) {
+        let userCK = $request.headers.Cookie
+        
+        if(userHeader) {
+            if(userHeader.indexOf(userCK) == -1) {
+                userHeader = userHeader + '@' + userCK
+                $.setdata(userHeader, 'jrttjsbHeader');
+                ckList = userHeader.split('@')
+                $.msg(jsname+` 获取第${ckList.length}个jrttjsbHeader成功: ${userCK}`)
+            }
+        } else {
+            $.setdata(userCK, 'jrttjsbHeader');
+            $.msg(jsname+` 获取第1个jrttjsbHeader成功: ${userCK}`)
         }
-      else if(result.status_code == 5003){
-        other +="已全部开启\n"
-        }
-          resolve()
-    })
-   })
-  }  
-function landwarer() {
-return new Promise((resolve, reject) => {
-  let landwaterurl ={
-    url: `https://api3-normal-c-lq.snssdk.com/ttgame/game_farm/land_water?tentimes=0${farmurl}`,
-    headers :JSON.parse(farmkey),
-      timeout: 60000,
+    }
 }
 
-   $.get(landwaterurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-        if(logs)$.log(data)
-       other +='📣农场浇水\n'
-      if(result.status_code == '0') {
-        other += result.message+'\n'
-        other += '💧水滴剩余'+result.data.water+'\n'
-        }
-      else{
-        other +=result.message+'\n'
-           }
-          resolve()
-    })
-   })
-  } 
-//done 这个离线奖励当宝箱全部开完后，需要进入农场再运行脚本，才能获取离线奖励，应该有一个判定，目前没有找到
-//利用浇水激活进农场状态获取离线奖励，目前测试每天离线奖励足够开启农场5个宝箱，不需要做游戏加快生产，具体情况看后期是否需要，再考虑加做除虫，开地，三餐奖励
-function double_reward() {
-return new Promise((resolve, reject) => {
-  let double_rewardurl ={
-    url: `https://api3-normal-c-lq.snssdk.com/ttgame/game_farm/double_reward?watch_ad=1&${farmurl}`,
-    headers :JSON.parse(farmkey),
-      timeout: 60000,
+async function checkEnv() {
+    if(userHeader) {
+        userHeaderArr = userHeader.split('@')
+    } else {
+        console.log('未找到jrttjsbHeader')
+        return false
+    }
+    if(userHeaderArr.length == 0) {
+        console.log('未找到有效的jrttjsbHeader')
+        return false
+    }
+    
+    if(userAgent) {
+        userAgentArr = userAgent.split('@')
+    } else {
+        console.log('未找到userAgent')
+        return false
+    }
+    UAcount = userAgentArr.length
+    
+    console.log(`共找到${userHeaderArr.length}个用户，${UAcount}个UA`)
+    return true
 }
 
-   $.get(double_rewardurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-       if(logs) $.log(data)
-        other +='📣农场视频双倍离线奖励\n'
-      if(result.status_code == 0) {
-        other += '获得成功\n'
-        }else if(result.status_code==5033){
-            other += result.message+'\n'
-          }
-        else{
-        other +='📣农场视频双倍离线奖励\n'
-        other +="无离线产量可领取\n"
-           }
-          resolve()
-    })
-   })
-  }  
+async function initAccountInfo() {
+    for(userIdx=0; userIdx<userHeaderArr.length; userIdx++) {
+        userStatus.push(true)
+    }
+}
 
+async function RunMultiUser() {
+    for(userIdx=0; userIdx<userHeaderArr.length; userIdx++) {
+        //任务页
+        await QueryUserInfo(1)
+        if(userStatus[userIdx]==true) {
+            await GetNewTabs()
+            await QuerySleepStatus()
+            await QueryWalkInfo()
+            await DoneEat()
+            
+            for(let adId of adIdList) await ExcitationAd(adId)
+            //console.log(validList)
+            
+        }
+    }
+    
+    await ReadArticles()
+    
+    for(userIdx=0; userIdx<userHeaderArr.length; userIdx++) {
+        if(userStatus[userIdx]==true) await QueryUserInfo(0)
+    }
+    
+    if(jrttjsbFarm) {
+        for(userIdx=0; userIdx<userHeaderArr.length; userIdx++) {
+            if(userStatus[userIdx]==true) {
+                //农场
+                //await EnterFarm()
+                //await $.wait(1500)
+                await QueryFarmThreeGift()
+                await QueryFarmInfo()
+                await QueryFarmLandStatus()
+                await QueryFarmSignStatus()
+                await QueryFarmTask()
+                
+                //种树
+                await QueryTreeChallenge()
+                await QueryTreeSignStatus()
+                await QueryTreeThreeGift()
+                await QueryTreeWaterTask()
+                await QueryTreeStatus()
+            }
+        }
+    }
+    
+}
+
+//阅读列表
+async function ListArts() {
+    let caller = printCaller()
+    let url = `${hostname}/api/news/feed/v64/?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.message=='success') {
+        for(let item of result.data) {
+            let content = JSON.parse(item.content)
+            if(content.group_id) {
+                readList.push(content.group_id)
+            }
+        }
+    } else {
+        console.log(`获取阅读列表失败：${result.message}`)
+    }
+}
+
+//阅读文章
+async function ReadArticles() {
+    console.log(`\n开始阅读，将会阅读${maxReadPerRun}篇文章`)
+    for(userIdx=0; userIdx<userHeaderArr.length; userIdx++) {
+        if(userStatus[userIdx]==true) {
+            await ReadDouble()
+            await DailyArtsReward()
+        }
+    }
+    for(let i=0; i<maxReadPerRun; i++) {
+        let readFlag = 0
+        for(userIdx=0; userIdx<userHeaderArr.length; userIdx++) {
+            if(userStatus[userIdx]==true) {
+                await ReadArtsReward()
+                readFlag = 1
+            }
+        }
+        if(readFlag ==1 && i<maxReadPerRun-1) {
+            console.log('等待15秒阅读下一篇...')
+            await $.wait(15100)
+        }
+    }
+}
+
+//阅读文章奖励
+async function ReadArtsReward() {
+    let caller = printCaller()
+    let rndGroupId = Math.floor(Math.random()*7000000000000000000)
+    let url = `${hostname}/luckycat/lite/v1/activity/done_whole_scene_task/?aid=35&update_version_code=85221&os_version=15.0&device_platform=iphone`
+    let body = `{"is_golden_egg":false,"scene_key":"article_detail","group_id":"${rndGroupId}"}`
+    let urlObject = populatePostUrl(url,body)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no==0) {
+        console.log(`用户${userIdx+1}阅读文章获得${result.data.score_amount}金币，今日阅读总收入：${result.data.total_score_amount}金币`)
+    } else {
+        console.log(`用户${userIdx+1}阅读文章失败：${result.err_tips}`)
+    }
+}
+
+//每日阅读奖励
+async function DailyArtsReward() {
+    let caller = printCaller()
+    let rndGroupId = Math.floor(Math.random()*7000000000000000000)
+    let url = `${hostname}/score_task/v1/task/get_read_bonus/?aid=35&update_version_code=85221&os_version=15.0&device_platform=iphone&group_id=${rndGroupId}`
+    let urlObject = populatePostUrl(url)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no==0) {
+        console.log(`用户${userIdx+1}领取每日阅读奖励获得${result.data.score_amount}金币(${result.data.icon_data.done_times}/${result.data.icon_data.read_limit})`)
+    } else {
+        console.log(`用户${userIdx+1}领取每日阅读奖励失败：${result.err_tips}`)
+    }
+}
+
+//阅读翻倍
+async function ReadDouble() {
+    let caller = printCaller()
+    let url = `${hostname}/luckycat/lite/v1/activity/double_whole_scene_task/?aid=35&update_version_code=85221&os_version=15.0&device_platform=iphone`
+    let body = `{}`
+    let urlObject = populatePostUrl(url,body)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no==0) {
+        console.log(`用户${userIdx+1}阅读翻倍成功`)
+    } else {
+        console.log(`用户${userIdx+1}阅读翻倍：${result.err_tips}`)
+    }
+}
+
+async function GetNewTabs() {
+    let caller = printCaller()
+    let url = `${hostname}/score_task/v1/user/new_tabs/?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no==0) {
+        for(let item of result.data.section) {
+            if(item.key == 'mine_input_code') {
+                await PostInviteCode()
+                break
+            }
+        }
+    }
+}
+
+async function PostInviteCode() {
+    let caller = printCaller()
+    let body = `{"invitecode" : "1173836876"}`
+    let url = `${hostname}/luckycat/lite/v1/invite/post_invite_code/?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populatePostUrl(url,body)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+}
+
+//金币收入
+async function QueryCoinInfo() {
+    let caller = printCaller()
+    let url = `${hostname}/luckycat/lite/v1/user/profit_detail/?offset=0&num=100&income_type=2&aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no == 0) {
+        console.log(result.data.score_income_list)
+    } else {
+        console.log(`用户${userIdx+1}查询金币收入失败：${result.err_tips}`)
+    }
+}
+
+//查询用户信息,任务状态
+async function QueryUserInfo(doTask) {
+    let caller = printCaller()
+    let url = `${hostname}/luckycat/lite/v1/task/page_data/?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no == 0) {
+        if(!result.data.treasure) {
+            userStatus[userIdx] = false
+            console.log(`用户${userIdx+1}查询状态失败，CK失效`)
+            return;
+        }
+        if(doTask==0) {
+            console.log(`\n账户信息：`)
+            console.log(`金币：${result.data.user_income.score_balance}`)
+            console.log(`现金：${result.data.user_income.cash_balance/100}元`)
+        } else {
+            if(result.data.treasure.next_treasure_time == result.data.treasure.current_time) {
+                await OpenTreasureBox()
+            } else {
+                let cdTime = result.data.treasure.next_treasure_time - result.data.treasure.current_time
+                console.log(`用户${userIdx+1}开宝箱冷却时间还有${cdTime}秒`)
+            }
+            if(result.data.signin_detail.today_signed == false) {
+                await SignIn()
+            } else {
+                console.log(`用户${userIdx+1}今天已签到`)
+            }
+        }
+    } else {
+        console.log(`用户${userIdx+1}查询状态失败：${result.err_tips}`)
+    }
+}
+
+//签到
+async function SignIn() {
+    let caller = printCaller()
+    let url = `${hostname}/luckycat/lite/v1/sign_in/action?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populatePostUrl(url)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no==0) {
+        console.log(`用户${userIdx+1}签到成功，获得${result.data.score_amount}金币，已连续签到${result.data.sign_times}天`)
+    } else {
+        console.log(`用户${userIdx+1}签到失败：${result.err_tips}`)
+    }
+}
+
+//开宝箱
+async function OpenTreasureBox() {
+    let caller = printCaller()
+    let timeInMS = Math.round(new Date().getTime())
+    let url = `${hostname}/score_task/v1/task/open_treasure_box/?os_api=25&device_type=VOG-AL10&ssmix=a&manifest_version_code=8280&dpi=240&abflag=3&pass_through=default&cookie_data=JS9ij2PS3AwsrLXtsMlBmg&use_ecpm=0&act_hash=33e5c7c6eceed48faa09bcb731f9cbfe&rom_version=25&rit=coin&app_name=news_article_lite&ab_client=a1%2Ce1%2Cf2%2Cg2%2Cf7&version_name=8.2.8&ab_version=1859936%2C668908%2C3491714%2C668907%2C3491710%2C668905%2C3491678%2C668906%2C3491686%2C668904%2C3491669%2C668903%2C3491704%2C3269751%2C3472846%2C3493942&plugin_state=7731332411413&sa_enable=0&ac=wifi&_request_from=web&update_version_code=82809&channel=lite2_tengxun&_rticket=${timeInMS}&status_bar_height=24&cookie_base=-1E_P8je5Sub5zWkBKiqODt2MECOGuxlsxp2J8N2wuHiAln1gxRIlq9T45zO7j1Y4RwJPfwnZaGcZ871TDjPVA&dq_param=0&device_platform=android&iid=1592553870724568&scm_build_version=1.0.0.1454&mac_address=88%3AB1%3A11%3A61%3A96%3A7B&version_code=828&polaris_version=1.0.5&tma_jssdk_version=1.95.0.28&cdid=19f86713-d4cf-49ea-81ab-541aa5cd7b44&is_pad=1&openudid=711ca30d9d3c10b7&device_id=809664500489800&resolution=720*1280&act_token=0WoqgcXrIdM-iXg179hjJOCBPav6mHf3Biw-ElFmYqvWQIsvoERPbrbEItIYJDJkjXW4NPai8DqYMlLQypO_eQ&os_version=7.1.2&language=zh&device_brand=HUAWEI&aid=35&ab_feature=z1&luckycat_version_name=4.2.0-rc.5&luckycat_version_code=420005`
+    let body = `{"open_treasure_box_enter_from":"","rit":"coin","use_ecpm":0}`
+    let urlObject = populatePostUrl(url,body)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no == 0) {
+        console.log(`用户${userIdx+1}开宝箱获得${result.data.score_amount}金币`)
+    } else {
+        console.log(`用户${userIdx+1}开宝箱失败：${result.err_tips}`)
+    }
+}
+
+//宝箱视频奖励
+async function ExcitationAd(task_id) {
+    let caller = printCaller()
+    let timeInMS = Math.round(new Date().getTime())
+    let url = `${hostname}/luckycat/lite/v1/task/done/excitation_ad?os_api=25&device_type=VOG-AL10&ssmix=a&manifest_version_code=8280&dpi=240&abflag=3&pass_through=default&cookie_data=JS9ij2PS3AwsrLXtsMlBmg&act_hash=33e5c7c6eceed48faa09bcb731f9cbfe&rom_version=25&app_name=news_article_lite&ab_client=a1%2Ce1%2Cf2%2Cg2%2Cf7&version_name=8.2.8&ab_version=1859936%2C668908%2C3491714%2C668907%2C3491710%2C668905%2C3491678%2C668906%2C3491686%2C668904%2C3491669%2C668903%2C3491704%2C3269751%2C3472846%2C3493942&plugin_state=7731332411413&sa_enable=0&ac=wifi&_request_from=web&update_version_code=82809&channel=lite2_tengxun&_rticket=${timeInMS}&status_bar_height=24&cookie_base=-1E_P8je5Sub5zWkBKiqODt2MECOGuxlsxp2J8N2wuHiAln1gxRIlq9T45zO7j1Y4RwJPfwnZaGcZ871TDjPVA&dq_param=0&device_platform=android&iid=1592553870724568&scm_build_version=1.0.0.1454&mac_address=88%3AB1%3A11%3A61%3A96%3A7B&version_code=828&polaris_version=1.0.5&tma_jssdk_version=1.95.0.28&cdid=19f86713-d4cf-49ea-81ab-541aa5cd7b44&is_pad=1&openudid=711ca30d9d3c10b7&device_id=809664500489800&resolution=720*1280&act_token=0WoqgcXrIdM-iXg179hjJOCBPav6mHf3Biw-ElFmYqvWQIsvoERPbrbEItIYJDJkjXW4NPai8DqYMlLQypO_eQ&os_version=7.1.2&language=zh&device_brand=HUAWEI&aid=35&ab_feature=z1&luckycat_version_name=4.2.0-rc.5&luckycat_version_code=420005`
+    let body = `{"ad_alias_position":"coin","task_key":"excitation_ad", "task_id" : "${task_id}"}`
+    let urlObject = populatePostUrl(url,body)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no == 0) {
+        console.log(`用户${userIdx+1}看视频任务[${task_id}]获得${result.data.score_amount}金币`)
+        //validList.push(task_id)
+    } else {
+        console.log(`用户${userIdx+1}看视频任务[${task_id}]失败：${result.err_tips}`)
+        //if(result.err_tips != '网络错误') validList.push(task_id)
+    }
+}
+
+//查询走路状态
+async function QueryWalkInfo() {
+    let caller = printCaller()
+    let url = `${hostname}/luckycat/lite/v1/walk/page_data/?aid=35&update_version_code=85221&os_version=15.0&device_platform=iphone`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no == 0) {
+        if(result.data.can_get_amount > 0) await GetWalkBonus()
+    } else {
+        console.log(`用户${userIdx+1}走路状态失败：${result.err_tips}`)
+    }
+}
+
+//走路奖励
+async function GetWalkBonus() {
+    let caller = printCaller()
+    let nowtime = Math.round(new Date().getTime()/1000)
+    let url = `${hostname}/luckycat/lite/v1/walk/bonus/?aid=35&update_version_code=85221&os_version=15.0&device_platform=iphone`
+    let body = `{"task_id":136,"enable_preload_exciting_video":0,"client_time":${nowtime},"rit":"","use_ecpm":0}`
+    let urlObject = populatePostUrl(url,body)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no == 0) {
+        console.log(`用户${userIdx+1}领取走路奖励获得${result.data.score_amount}金币`)
+    } else {
+        console.log(`用户${userIdx+1}领取走路奖励失败：${result.err_tips}`)
+    }
+}
+
+//吃饭补贴
+async function DoneEat() {
+    let caller = printCaller()
+    let url = `${hostname}/luckycat/lite/v1/eat/done_eat/?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populatePostUrl(url)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no == 0) {
+        console.log(`用户${userIdx+1}领取吃饭补贴获得${result.data.score_amount}金币`)
+    } else {
+        console.log(`用户${userIdx+1}领取吃饭补贴失败：${result.err_tips}`)
+    }
+}
 
 //睡觉状态
-function sleepstatus() {
-return new Promise((resolve, reject) => {
-  let sleepstatusurl ={
-    url: `https://api3-normal-c-lq.snssdk.com/luckycat/lite/v1/sleep/status/?_request_from=web&${signurl}`,
-    headers :JSON.parse(signkey),
-      timeout: 60000,
-}
-
-   $.get(sleepstatusurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-       if(logs)$.log(data)
-      if(result.err_no == 0) {
-          other +='📣查询睡觉状态\n🎉查询'+result.err_tips+'\n'
-           }
-      if(result.data.sleeping == false){
-          other +='当前状态:清醒着呢\n'
-        if(hour >= 20||hour<=2){
-           collect=0 //await sleepstart()
-           }else{
-if(result.data.history_amount!==0){ 
-//即使没有满足3600也在睡觉12小时后停止，以防封号
-         coins=result.data.history_amount
-         collect =3 //collect coins
-          }else{
-         collect=2
-}
-}}
-          else{
-         other  +='当前状态:酣睡中,已睡'+parseInt(result.data.sleep_last_time/3600)+'小时'+parseInt((result.data.sleep_last_time%3600)/60)+'分钟'+parseInt((result.data.sleep_last_time%3600)%60)+'秒\n'
-          other +='预计可得金币'+result.data.sleep_unexchanged_score+'\n'
-          coins=result.data.sleep_unexchanged_score
-         if(result.data.sleep_unexchanged_score == 3600 || parseInt(result.data.sleep_last_time/3600) >= 12){ 
-//即使没有满足3600也在睡觉12小时后停止，以防封号
-         collect =1 //collect coins&sleepstop
-          }else{
-         collect =2
-}
-   
-     }
-          resolve()
-    })
-   })
-  } 
-//开始睡觉
-function sleepstart() {
-return new Promise((resolve, reject) => {
-  let sleepstarturl ={
-    url: `https://api3-normal-c-lq.snssdk.com/luckycat/lite/v1/sleep/start/?_request_from=web&${signurl}`,
-    headers :JSON.parse(signkey),
-      timeout: 60000,
-}
-
-   $.post(sleepstarturl,(error, response, data) =>{
-     const result = JSON.parse(data)
-       if(logs) $.log(data)
-      if(result.err_no == 0) {
-          other +='📣开始睡觉\n该睡觉了，开始睡觉'+result.err_tips+'\n'
-  
-}     else if(result.err_no == 1052){
-          other +='📣开始睡觉\n'+result.err_tips+'\n'
-           }else{
-          other += '📣开始睡觉:'+'⚠️异常'
-}
-          resolve()
-    })
-   })
-  } 
-//停止睡觉
-function sleepstop() {
-return new Promise((resolve, reject) => {
-  let sleepstopurl ={
-    url: `https://api3-normal-c-lq.snssdk.com/luckycat/lite/v1/sleep/stop/?_request_from=web&${signurl}`,
-    headers :JSON.parse(signkey),
-      timeout: 60000,
-}
-
-   $.post(sleepstopurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-       if(logs) $.log(data)
-      if(result.err_no == 0) {
-          other +='📣停止睡觉\n'+result.err_tips+'\n'
-          
-}     else if(result.err_no == 1052){
-          other += '📣停止睡觉\n'+'还没开始睡觉\n'
-           }else{
-          other +='📣停止睡觉:'+'\n⚠️异常'
-}
-          resolve()
-    })
-   })
-  } 
-//收取睡觉金币
-function collectcoins(coins) {
-return new Promise((resolve, reject) => {
-  let collectcoinsurl ={
-    url: `https://api3-normal-c-lq.snssdk.com/luckycat/lite/v1/sleep/done_task/?_request_from=web&device_platform=undefined&${signurl}`,
-    headers :JSON.parse(farmkey),
-      timeout: 60000,
-    body :JSON.stringify({score_amount: coins}),
-
-}
-
-   $.post(collectcoinsurl,(error, response, data) =>{
-     const result = JSON.parse(data)
-       if(logs)$.log(data)
-      if(result.err_no == 0) {
-          other +='📣收取金币\n'+result.err_tips+'     获得金币:'+coins
-          
-}     else{
-          other +='📣收取金币:'+'\n⚠️异常:'+result.err_tips+''
-}
-          resolve()
-    })
-   })
-  } 
-async function showmsg() {
-    if (tz == 1) {
-      if ($.isNode()) {
-        if ((hour == 12 && minute <= 20) || (hour == 23 && minute >= 40)) {
-          await notify.sendNotify($.name, other)
+async function QuerySleepStatus() {
+    let caller = printCaller()
+    let curTime = new Date()
+    let curHour = curTime.getHours()
+    let url = `${hostname}/luckycat/lite/v1/sleep/status/?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no == 0) {
+        let sleepHour = Math.floor(result.data.sleep_last_time/36)/100
+        if(result.data.sleeping == true) {
+            if(sleepHour>=12) {
+                await SleepStop()
+            } else if(result.data.sleep_unexchanged_score==result.data.max_coin && curHour >= 7) {
+                let rnd = Math.random()
+                if(rnd>0.90) {
+                    await SleepStop()
+                } else {
+                    console.log(`用户${userIdx+1}随机醒来时间，本次不进行醒来，已经睡了${sleepHour}小时，可以获得${result.data.sleep_unexchanged_score}金币`)
+                }
+            } else {
+                console.log(`用户${userIdx+1}睡眠中，已经睡了${sleepHour}小时，可以获得${result.data.sleep_unexchanged_score}金币，上限${result.data.max_coin}金币`)
+            }
         } else {
-          $.log(other)
+            if(result.data.history_amount > 0) {
+                await SleepDone(result.data.history_amount)
+            }
+            if(curHour >= 22 || curHour < 2) {
+                await SleepStart()
+            } else if(curHour >= 20) {
+                let rnd = Math.random()
+                if(rnd>0.90) {
+                    await SleepStart()
+                } else {
+                    console.log(`用户${userIdx+1}随机睡眠时间，本次不进行睡眠`)
+                }
+            } else {
+                console.log(`用户${userIdx+1}未到睡觉时间`)
+            }
         }
-      } else {
-        if ((hour == 12 && minute <= 20) || (hour == 23 && minute >= 40)) {
-          $.msg($.jsname, '', other)
-        } else {
-          $.log(other)
-        }
-      }
     } else {
-      $.log(other)
-  }
+        console.log(`用户${userIdx+1}查询睡觉状态失败：${result.err_tips}`)
+    }
 }
-function Env(t,e){class s{constructor(t){this.env=t}send(t,e="GET"){t="string"==typeof t?{url:t}:t;let s=this.get;return"POST"===e&&(s=this.post),new Promise((e,i)=>{s.call(this,t,(t,s,r)=>{t?i(t):e(s)})})}get(t){return this.send.call(this.env,t)}post(t){return this.send.call(this.env,t,"POST")}}return new class{constructor(t,e){this.name=t,this.http=new s(this),this.data=null,this.dataFile="box.dat",this.logs=[],this.isMute=!1,this.isNeedRewrite=!1,this.logSeparator="\n",this.startTime=(new Date).getTime(),Object.assign(this,e),this.log("",`\ud83d\udd14${this.name}, \u5f00\u59cb!`)}isNode(){return"undefined"!=typeof module&&!!module.exports}isQuanX(){return"undefined"!=typeof $task}isSurge(){return"undefined"!=typeof $httpClient&&"undefined"==typeof $loon}isLoon(){return"undefined"!=typeof $loon}toObj(t,e=null){try{return JSON.parse(t)}catch{return e}}toStr(t,e=null){try{return JSON.stringify(t)}catch{return e}}getjson(t,e){let s=e;const i=this.getdata(t);if(i)try{s=JSON.parse(this.getdata(t))}catch{}return s}setjson(t,e){try{return this.setdata(JSON.stringify(t),e)}catch{return!1}}getScript(t){return new Promise(e=>{this.get({url:t},(t,s,i)=>e(i))})}runScript(t,e){return new Promise(s=>{let i=this.getdata("@chavy_boxjs_userCfgs.httpapi");i=i?i.replace(/\n/g,"").trim():i;let r=this.getdata("@chavy_boxjs_userCfgs.httpapi_timeout");r=r?1*r:20,r=e&&e.timeout?e.timeout:r;const[o,h]=i.split("@"),a={url:`http://${h}/v1/scripting/evaluate`,body:{script_text:t,mock_type:"cron",timeout:r},headers:{"X-Key":o,Accept:"*/*"}};this.post(a,(t,e,i)=>s(i))}).catch(t=>this.logErr(t))}loaddata(){if(!this.isNode())return{};{this.fs=this.fs?this.fs:require("fs"),this.path=this.path?this.path:require("path");const t=this.path.resolve(this.dataFile),e=this.path.resolve(process.cwd(),this.dataFile),s=this.fs.existsSync(t),i=!s&&this.fs.existsSync(e);if(!s&&!i)return{};{const i=s?t:e;try{return JSON.parse(this.fs.readFileSync(i))}catch(t){return{}}}}}writedata(){if(this.isNode()){this.fs=this.fs?this.fs:require("fs"),this.path=this.path?this.path:require("path");const t=this.path.resolve(this.dataFile),e=this.path.resolve(process.cwd(),this.dataFile),s=this.fs.existsSync(t),i=!s&&this.fs.existsSync(e),r=JSON.stringify(this.data);s?this.fs.writeFileSync(t,r):i?this.fs.writeFileSync(e,r):this.fs.writeFileSync(t,r)}}lodash_get(t,e,s){const i=e.replace(/\[(\d+)\]/g,".$1").split(".");let r=t;for(const t of i)if(r=Object(r)[t],void 0===r)return s;return r}lodash_set(t,e,s){return Object(t)!==t?t:(Array.isArray(e)||(e=e.toString().match(/[^.[\]]+/g)||[]),e.slice(0,-1).reduce((t,s,i)=>Object(t[s])===t[s]?t[s]:t[s]=Math.abs(e[i+1])>>0==+e[i+1]?[]:{},t)[e[e.length-1]]=s,t)}getdata(t){let e=this.getval(t);if(/^@/.test(t)){const[,s,i]=/^@(.*?)\.(.*?)$/.exec(t),r=s?this.getval(s):"";if(r)try{const t=JSON.parse(r);e=t?this.lodash_get(t,i,""):e}catch(t){e=""}}return e}setdata(t,e){let s=!1;if(/^@/.test(e)){const[,i,r]=/^@(.*?)\.(.*?)$/.exec(e),o=this.getval(i),h=i?"null"===o?null:o||"{}":"{}";try{const e=JSON.parse(h);this.lodash_set(e,r,t),s=this.setval(JSON.stringify(e),i)}catch(e){const o={};this.lodash_set(o,r,t),s=this.setval(JSON.stringify(o),i)}}else s=this.setval(t,e);return s}getval(t){return this.isSurge()||this.isLoon()?$persistentStore.read(t):this.isQuanX()?$prefs.valueForKey(t):this.isNode()?(this.data=this.loaddata(),this.data[t]):this.data&&this.data[t]||null}setval(t,e){return this.isSurge()||this.isLoon()?$persistentStore.write(t,e):this.isQuanX()?$prefs.setValueForKey(t,e):this.isNode()?(this.data=this.loaddata(),this.data[e]=t,this.writedata(),!0):this.data&&this.data[e]||null}initGotEnv(t){this.got=this.got?this.got:require("got"),this.cktough=this.cktough?this.cktough:require("tough-cookie"),this.ckjar=this.ckjar?this.ckjar:new this.cktough.CookieJar,t&&(t.headers=t.headers?t.headers:{},void 0===t.headers.Cookie&&void 0===t.cookieJar&&(t.cookieJar=this.ckjar))}get(t,e=(()=>{})){t.headers&&(delete t.headers["Content-Type"],delete t.headers["Content-Length"]),this.isSurge()||this.isLoon()?(this.isSurge()&&this.isNeedRewrite&&(t.headers=t.headers||{},Object.assign(t.headers,{"X-Surge-Skip-Scripting":!1})),$httpClient.get(t,(t,s,i)=>{!t&&s&&(s.body=i,s.statusCode=s.status),e(t,s,i)})):this.isQuanX()?(this.isNeedRewrite&&(t.opts=t.opts||{},Object.assign(t.opts,{hints:!1})),$task.fetch(t).then(t=>{const{statusCode:s,statusCode:i,headers:r,body:o}=t;e(null,{status:s,statusCode:i,headers:r,body:o},o)},t=>e(t))):this.isNode()&&(this.initGotEnv(t),this.got(t).on("redirect",(t,e)=>{try{if(t.headers["set-cookie"]){const s=t.headers["set-cookie"].map(this.cktough.Cookie.parse).toString();this.ckjar.setCookieSync(s,null),e.cookieJar=this.ckjar}}catch(t){this.logErr(t)}}).then(t=>{const{statusCode:s,statusCode:i,headers:r,body:o}=t;e(null,{status:s,statusCode:i,headers:r,body:o},o)},t=>{const{message:s,response:i}=t;e(s,i,i&&i.body)}))}post(t,e=(()=>{})){if(t.body&&t.headers&&!t.headers["Content-Type"]&&(t.headers["Content-Type"]="application/x-www-form-urlencoded"),t.headers&&delete t.headers["Content-Length"],this.isSurge()||this.isLoon())this.isSurge()&&this.isNeedRewrite&&(t.headers=t.headers||{},Object.assign(t.headers,{"X-Surge-Skip-Scripting":!1})),$httpClient.post(t,(t,s,i)=>{!t&&s&&(s.body=i,s.statusCode=s.status),e(t,s,i)});else if(this.isQuanX())t.method="POST",this.isNeedRewrite&&(t.opts=t.opts||{},Object.assign(t.opts,{hints:!1})),$task.fetch(t).then(t=>{const{statusCode:s,statusCode:i,headers:r,body:o}=t;e(null,{status:s,statusCode:i,headers:r,body:o},o)},t=>e(t));else if(this.isNode()){this.initGotEnv(t);const{url:s,...i}=t;this.got.post(s,i).then(t=>{const{statusCode:s,statusCode:i,headers:r,body:o}=t;e(null,{status:s,statusCode:i,headers:r,body:o},o)},t=>{const{message:s,response:i}=t;e(s,i,i&&i.body)})}}time(t){let e={"M+":(new Date).getMonth()+1,"d+":(new Date).getDate(),"H+":(new Date).getHours(),"m+":(new Date).getMinutes(),"s+":(new Date).getSeconds(),"q+":Math.floor(((new Date).getMonth()+3)/3),S:(new Date).getMilliseconds()};/(y+)/.test(t)&&(t=t.replace(RegExp.$1,((new Date).getFullYear()+"").substr(4-RegExp.$1.length)));for(let s in e)new RegExp("("+s+")").test(t)&&(t=t.replace(RegExp.$1,1==RegExp.$1.length?e[s]:("00"+e[s]).substr((""+e[s]).length)));return t}msg(e=t,s="",i="",r){const o=t=>{if(!t)return t;if("string"==typeof t)return this.isLoon()?t:this.isQuanX()?{"open-url":t}:this.isSurge()?{url:t}:void 0;if("object"==typeof t){if(this.isLoon()){let e=t.openUrl||t.url||t["open-url"],s=t.mediaUrl||t["media-url"];return{openUrl:e,mediaUrl:s}}if(this.isQuanX()){let e=t["open-url"]||t.url||t.openUrl,s=t["media-url"]||t.mediaUrl;return{"open-url":e,"media-url":s}}if(this.isSurge()){let e=t.url||t.openUrl||t["open-url"];return{url:e}}}};this.isMute||(this.isSurge()||this.isLoon()?$notification.post(e,s,i,o(r)):this.isQuanX()&&$notify(e,s,i,o(r)));let h=["","==============\ud83d\udce3\u7cfb\u7edf\u901a\u77e5\ud83d\udce3=============="];h.push(e),s&&h.push(s),i&&h.push(i),console.log(h.join("\n")),this.logs=this.logs.concat(h)}log(...t){t.length>0&&(this.logs=[...this.logs,...t]),console.log(t.join(this.logSeparator))}logErr(t,e){const s=!this.isSurge()&&!this.isQuanX()&&!this.isLoon();s?this.log("",`\u2757\ufe0f${this.name}, \u9519\u8bef!`,t.stack):this.log("",`\u2757\ufe0f${this.name}, \u9519\u8bef!`,t)}wait(t){return new Promise(e=>setTimeout(e,t))}done(t={}){const e=(new Date).getTime(),s=(e-this.startTime)/1e3;this.log("",`\ud83d\udd14${this.name}, \u7ed3\u675f! \ud83d\udd5b ${s} \u79d2`),this.log(),(this.isSurge()||this.isQuanX()||this.isLoon())&&$done(t)}}(t,e)}
+
+//睡觉醒来
+async function SleepStop() {
+    let caller = printCaller()
+    let url = `${hostname}/luckycat/lite/v1/sleep/stop/?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populatePostUrl(url)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no == 0) {
+        let sleepHour = result.data.sleep_last_time/3600
+        console.log(`用户${userIdx+1}结束睡眠，本次睡了${sleepHour}小时，可以领取${result.data.history_amount}金币`)
+        await SleepDone(result.data.history_amount)
+    } else {
+        console.log(`用户${userIdx+1}结束睡眠失败：${result.err_tips}`)
+    }
+}
+
+//睡觉收金币
+async function SleepDone(amount) {
+    let caller = printCaller()
+    let url = `${hostname}/luckycat/lite/v1/sleep/done_task/?_request_from=web&scm_build_version=1.0.0.1437&version_code=8.5.2&tma_jssdk_version=2.25.0.11&app_name=news_article_lite&channel=App%20Store&resolution=1170*2532&aid=35&ab_version=668907,3485378,3491710,668905,3491678,668906,3491686,668904,3491669,668903,3491704,1859936,668908,3491714,3269751,3472847&ab_feature=794526&review_flag=0&ab_group=794526&subchannel=unknown&update_version_code=85221&ac=WIFI&os_version=15.0&ssmix=a&device_platform=iphone&ab_client=a1,f2,f7,e1&device_type=iPhone13,2`
+    let body = `{"score_amount" : ${amount}}`
+    let urlObject = populatePostUrl(url,body)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no == 0) {
+        console.log(`用户${userIdx+1}领取睡觉金币奖励${amount}金币成功`)
+    } else {
+        console.log(`用户${userIdx+1}领取睡觉金币奖励失败：${result.err_tips}`)
+    }
+}
+
+//开始睡觉
+async function SleepStart() {
+    let caller = printCaller()
+    let url = `${hostname}/luckycat/lite/v1/sleep/start/?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populatePostUrl(url)
+    await httpPost(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.err_no == 0) {
+        console.log(`用户${userIdx+1}开始睡觉，ZZZzzz...`)
+        await SleepDone(result.data.history_amount)
+    } else {
+        console.log(`用户${userIdx+1}开始睡觉失败：${result.err_tips}`)
+    }
+}
+
+//查询农场状态
+async function QueryFarmInfo() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/polling_info?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        if(result.data.info.offline_production) {
+            await FarmOfflineDouble()
+        }
+        if(result.data.info.water>=10) {
+            await FarmWater()
+        }
+        if(result.data.info.box_num>0) {
+            await FarmOpenBox()
+        }
+    } else {
+        console.log(`用户${userIdx+1}查询农场状态失败：${result.message}`)
+    }
+}
+
+//进入农场
+async function EnterFarm() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/home_info?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    console.log(result)
+    if(result.status_code == 0) {
+        
+    } else {
+        console.log(`用户${userIdx+1}进入农场失败：${result.message}`)
+    }
+}
+
+//农场-离线奖励翻倍
+async function FarmOfflineDouble() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/double_reward?watch_ad=1&aid=35`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}农场离线产量翻倍成功`)
+    } else {
+        console.log(`用户${userIdx+1}农场离线产量翻倍失败：${result.message}`)
+    }
+}
+
+//农场-领取三餐礼包
+async function RewardFarmThreeGift(gift_id) {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/reward/gift?game_client_version_code=2&gift_id=${gift_id}&watch_ad=0&double=0&aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}领取农场三餐礼包获得${result.data.reward_num}水滴`)
+    } else {
+        console.log(`用户${userIdx+1}领取农场三餐礼包失败：${result.message}`)
+    }
+}
+
+//农场-三餐礼包状态
+async function QueryFarmThreeGift() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/gift/list?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        for(let item of result.data) {
+            if(item.status==1) {
+                await RewardFarmThreeGift(item.gift_id)
+            }
+        }
+    } else {
+        console.log(`用户${userIdx+1}查询农场三餐礼包状态失败：${result.message}`)
+    }
+}
+
+//查询农场任务列表
+async function QueryFarmTask() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/daily_task/list?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        for(let item of result.data) {
+            if(item.status==1) {
+                await RewardFarmTask(item.task_id)
+            }
+        }
+    } else {
+        console.log(`用户${userIdx+1}查询农场任务列表失败：${result.message}`)
+    }
+}
+
+//农场-领取任务奖励
+async function RewardFarmTask(id) {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/reward/task?task_id=${id}&aid=35`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        let typeStr = (result.data.reward_type==1) ? '水滴' : '化肥'
+        console.log(`用户${userIdx+1}领取农场任务奖励[task_id=${result.data.task_id}]获得${result.data.reward_num}${typeStr}，剩余${typeStr}数量${result.data.current_num}`)
+    } else {
+        console.log(`用户${userIdx+1}领取农场任务奖励失败：${result.message}`)
+    }
+}
+
+//农场-浇水
+async function FarmWater() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/land_water?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}农场浇水成功，剩余水滴：${result.data.water}`)
+        if(result.data.water>=10) {
+            await $.wait(1500) //min time 1000
+            await FarmWater()
+        }
+    } else {
+        console.log(`用户${userIdx+1}农场浇水失败：${result.message}`)
+    }
+}
+
+//农场-开宝箱
+async function FarmOpenBox() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/box/open?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}开农场宝箱获得${result.data.incr_coin}金币`)
+        if(result.data.excitation_ad_score_amount>0) await FarmOpenBoxVideo()
+    } else {
+        console.log(`用户${userIdx+1}开农场宝箱失败：${result.message}`)
+    }
+}
+
+//农场-宝箱视频
+async function FarmOpenBoxVideo() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/excitation_ad/add?excitation_ad_score_amount=134&device_id=2392172203611735&aid=35&os_version=15.0&update_version_code=85221`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}看农场宝箱视频获得${result.data.incr_coin}金币`)
+    } else {
+        console.log(`用户${userIdx+1}看农场宝箱视频失败：${result.message}`)
+    }
+}
+
+//农场-签到状态
+async function QueryFarmSignStatus() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/sign_in/list?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        for(let item of result.data.sign) {
+            if(item.status==1) {
+                await FarmSign()
+                break
+            }
+        }
+    } else {
+        console.log(`用户${userIdx+1}查询签到状态失败：${result.message}`)
+    }
+}
+
+//农场-签到
+async function FarmSign() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/reward/sign_in?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        let str = (result.data.reward_type==1)?'水滴':'化肥'
+        console.log(`用户${userIdx+1}签到获得${result.data.reward_num}${str}，剩余${str}数量${result.data.cur_reward_num}`)
+    } else {
+        console.log(`用户${userIdx+1}签到失败：${result.message}`)
+    }
+}
+
+//农场-签到视频翻倍
+async function FarmSignDouble() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/reward/double_sign_in?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        let str = (result.data.reward_type==1)?'水滴':'化肥'
+        console.log(`用户${userIdx+1}签到翻倍获得${result.data.reward_num}{str}，剩余${str}数量${result.data.cur_reward_num}`)
+    } else {
+        console.log(`用户${userIdx+1}签到翻倍失败：${result.message}`)
+    }
+}
+
+//农场-土地状态
+async function QueryFarmLandStatus() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/home_info?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        for(let item of result.data.info.lands) {
+            if(item.status==false && item.unlock_able==true) {
+                await FarmUnlock(item.land_id)
+                break
+            }
+        }
+    } else {
+        console.log(`用户${userIdx+1}查询土地状态失败：${result.message}`)
+    }
+}
+
+//农场-土地解锁
+async function FarmUnlock(land_id) {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_farm/land/unlock?land_id=${land_id}&aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}解锁${land_id}号土地成功`)
+    } else {
+        console.log(`用户${userIdx+1}解锁${land_id}号土地失败：${result.message}`)
+    }
+}
+
+//种树-签到状态
+async function QueryTreeSignStatus() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/sign_in/list?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        if(result.data.today == false) {
+            await TreeSign()
+        }
+    } else {
+        console.log(`用户${userIdx+1}查询种树签到状态失败：${result.message}`)
+    }
+}
+
+//种树-签到
+async function TreeSign() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/sign_in/reward?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}种树签到获得${result.data.reward_item.num}${result.data.reward_item.name}`)
+    } else {
+        console.log(`用户${userIdx+1}种树签到失败：${result.message}`)
+    }
+}
+
+//种树-二选一-选项
+async function QueryTreeChallenge() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/challenge/list?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        let bestChoice = 0
+        let maxWater = 0
+        for(let item of result.data.tasks) {
+            if(item.state==0 && item.water_times>maxWater) {
+                maxWater = item.water_times
+                bestChoice = item.id
+            }
+        }
+        if(bestChoice>0) await TreeChallengeChoose(bestChoice)
+    } else {
+        console.log(`用户${userIdx+1}查询挑战任务失败：${result.message}`)
+    }
+}
+
+//种树-二选一-选择
+async function TreeChallengeChoose(id) {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/challenge/choose?task_id=${id}&aid=35`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}选择浇水${result.data.red_point.times}次挑战`)
+    } else {
+        console.log(`用户${userIdx+1}选择浇水挑战失败：${result.message}`)
+    }
+}
+
+//种树-二选一-领奖
+async function TreeChallengeReward() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/challenge/reward?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}领取浇水挑战奖励获得${result.data.reward_item.num}水滴`)
+    } else {
+        console.log(`用户${userIdx+1}领取浇水挑战奖励失败：${result.message}`)
+    }
+}
+
+//种树-化肥签到
+async function TreeNutrientSign() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/nutrient/sign_in?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        if(result.data.is_rewarded==true) {
+            console.log(`用户${userIdx+1}种树化肥签到获得${result.data.reward_item.num}{result.data.reward_item.name}`)
+        } else {
+            console.log(`用户${userIdx+1}种树化肥签到成功`)
+        }
+    } else {
+        console.log(`用户${userIdx+1}种树化肥签到失败：${result.message}`)
+    }
+}
+
+//种树-领取三餐礼包
+async function RewardTreeThreeGift(task_id) {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/three_gift/reward?task_id=${task_id}&watch_ad=0&extra_ad_num=0&aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}领取种树三餐礼包获得${result.data.reward_item.num}${result.data.reward_item.name}`)
+    } else {
+        console.log(`用户${userIdx+1}领取种树三餐礼包失败：${result.message}`)
+    }
+}
+
+//种树-三餐礼包状态
+async function QueryTreeThreeGift() {
+    let caller = printCaller()
+    let curTime = new Date()
+    let curHour = curTime.getHours()
+    let url = `${hostname}/ttgame/game_orchard/three_gift/list?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        for(let item of result.data.gift_list) {
+            if(item.rounds==1 && curHour >= item.available_time.begin && curHour < item.available_time.end) {
+                await RewardTreeThreeGift(item.id)
+            }
+        }
+    } else {
+        console.log(`用户${userIdx+1}查询种树三餐礼包状态失败：${result.message}`)
+    }
+}
+
+//种树-水滴任务列表
+async function QueryTreeWaterTask() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/tasks/list?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        for(let item of result.data.tasks_v2) {
+            if(item.reward_item.state==4) {
+                await TreeWaterReward(item.id)
+                await $.wait(1500)
+            }
+        }
+    } else {
+        console.log(`用户${userIdx+1}查询种树水滴任务列表失败：${result.message}`)
+    }
+}
+
+//种树-水滴领奖
+async function TreeWaterReward(task_id) {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/tasks/reward?task_id=${task_id}&do_action=0&aid=35`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}领取水滴任务[id=${task_id}]获得${result.data.reward_item.num}${result.data.reward_item.name}`)
+    } else {
+        console.log(`用户${userIdx+1}领取水滴任务[id=${task_id}]失败：${result.message}`)
+    }
+}
+
+//种树-浇水
+async function TreeWater() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/tree/water?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}种树浇水成功，剩余水滴：${result.data.kettle.water_num}`)
+        if(result.data.kettle.water_num>=100) {
+            await $.wait(1500) //min time 1000
+            await TreeWaterTenTimes()
+        } else if(result.data.kettle.water_num>=10) {
+            await $.wait(1500) //min time 1000
+            await TreeWater()
+        }
+    } else {
+        console.log(`用户${userIdx+1}种树浇水失败：${result.message}`)
+    }
+}
+
+//种树-浇水10次
+async function TreeWaterTenTimes() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/tree/tenfold_water?times=10&aid=35`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}种树浇水10次成功，剩余水滴：${result.data.kettle.water_num}`)
+        if(result.data.kettle.water_num>=100) {
+            await $.wait(1500) //min time 1000
+            await TreeWaterTenTimes()
+        } else if(result.data.kettle.water_num>=10) {
+            await $.wait(1500) //min time 1000
+            await TreeWater()
+        }
+    } else {
+        console.log(`用户${userIdx+1}种树浇水失败：${result.message}`)
+    }
+}
+
+//种树-信息
+async function QueryTreeStatus() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/polling_info?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        if(result.data.red_points.challenge && result.data.red_points.challenge.state==4) {
+            await TreeChallengeReward()
+        }
+        if(result.data.bottle.state==1) {
+            await RewardTreeWaterBottle()
+        }
+        if(result.data.red_points.box && result.data.red_points.box.rounds>0 && result.data.red_points.box.state==4) {
+            await TreeOpenBox()
+        }
+        if(result.data.kettle.water_num >= 100) {
+            await TreeWaterTenTimes()
+        } else if(result.data.kettle.water_num>=10) {
+            await TreeWater()
+        }
+    } else {
+        console.log(`用户${userIdx+1}查询种树信息失败：${result.message}`)
+    }
+}
+
+//种树-水瓶奖励
+async function RewardTreeWaterBottle() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/water_bottle/reward?aid=35&update_version_code=85221&device_platform=iphone&&device_type=iPhone13,2`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}领取种树水瓶奖励获得${result.data.reward_item.num}水滴`)
+    } else {
+        console.log(`用户${userIdx+1}领取种树水瓶奖励失败：${result.message}`)
+    }
+}
+
+//种树-开宝箱
+async function TreeOpenBox() {
+    let caller = printCaller()
+    let url = `${hostname}/ttgame/game_orchard/box2/open?watch_ad=0&aid=35`
+    let urlObject = populateGetUrl(url)
+    await httpGet(urlObject,caller)
+    let result = httpResult;
+    if(!result) return
+    //console.log(result)
+    if(result.status_code == 0) {
+        console.log(`用户${userIdx+1}种树开宝箱获得${result.data.incr_coin}金币`)
+    } else {
+        console.log(`用户${userIdx+1}种树开宝箱失败：${result.message}`)
+    }
+}
+////////////////////////////////////////////////////////////////////
+function populatePostUrl(url,reqBody=''){
+    let timeInMS = Math.round(new Date().getTime())
+    let timeInSecond = Math.floor(timeInMS/1000)
+    let urlObject = {
+        url: url,
+        headers: {
+            'Accept-Encoding' : 'gzip',
+            'X-SS-REQ-TICKET' : timeInMS,
+            'passport-sdk-version' : '30',
+            'sdk-version' : '2',
+            'x-vc-bdturing-sdk-version' : '2.0.0',
+            'User-Agent' : userAgent[userIdx%UAcount],
+            'Cookie' : userHeaderArr[userIdx],
+            'X-Khronos' : timeInSecond,
+            'Content-Type' : 'application/json; charset=utf-8',
+            'Host' : host,
+            'Connection' : 'Keep-Alive',
+        },
+        body: reqBody
+    }
+    return urlObject;
+}
+
+function populateGetUrl(url){
+    let timeInMS = Math.round(new Date().getTime())
+    let timeInSecond = Math.floor(timeInMS/1000)
+    let urlObject = {
+        url: url,
+        headers: {
+            'Accept-Encoding' : 'gzip',
+            'X-SS-REQ-TICKET' : timeInMS,
+            'passport-sdk-version' : '30',
+            'sdk-version' : '2',
+            'x-vc-bdturing-sdk-version' : '2.0.0',
+            'User-Agent' : userAgent[userIdx%UAcount],
+            'Cookie' : userHeaderArr[userIdx],
+            'X-Khronos' : timeInSecond,
+            'Content-Type' : 'application/json; charset=utf-8',
+            'Host' : host,
+            'Connection' : 'Keep-Alive',
+        }
+    }
+    return urlObject;
+}
+
+async function httpPost(url,caller) {
+    httpResult = null
+    return new Promise((resolve) => {
+        $.post(url, async (err, resp, data) => {
+            try {
+                if (err) {
+                    console.log(caller + ": post请求失败");
+                    console.log(JSON.stringify(err));
+                    $.logErr(err);
+                } else {
+                    if (safeGet(data)) {
+                        httpResult = JSON.parse(data);
+                        if(logDebug) console.log(httpResult);
+                    }
+                }
+            } catch (e) {
+                $.logErr(e, resp);
+            } finally {
+                resolve();
+            }
+        });
+    });
+}
+
+async function httpGet(url,caller) {
+    httpResult = null
+    return new Promise((resolve) => {
+        $.get(url, async (err, resp, data) => {
+            try {
+                if (err) {
+                    console.log(caller + ": get请求失败");
+                    console.log(JSON.stringify(err));
+                    $.logErr(err);
+                } else {
+                    if (safeGet(data,caller)) {
+                        httpResult = JSON.parse(data);
+                        if(logDebug) console.log(httpResult);
+                    }
+                }
+            } catch (e) {
+                $.logErr(e, resp);
+            } finally {
+                resolve();
+            }
+        });
+    });
+}
+
+function safeGet(data,caller) {
+    try {
+        if (typeof JSON.parse(data) == "object") {
+            return true;
+        } else {
+            console.log(`Function ${caller}: 未知错误`);
+            console.log(data)
+        }
+    } catch (e) {
+        console.log(e);
+        console.log(`Function ${caller}: 服务器访问数据为空，请检查自身设备网络情况`);
+        return false;
+    }
+}
+
+function printCaller(){
+    return (new Error()).stack.split("\n")[2].trim().split(" ")[1]
+}
+
+function getMin(a,b){
+    return ((a<b) ? a : b)
+}
+
+function getMax(a,b){
+    return ((a<b) ? b : a)
+}
+
+function Env(t, e) { class s { constructor(t) { this.env = t } send(t, e = "GET") { t = "string" == typeof t ? { url: t } : t; let s = this.get; return "POST" === e && (s = this.post), new Promise((e, i) => { s.call(this, t, (t, s, r) => { t ? i(t) : e(s) }) }) } get(t) { return this.send.call(this.env, t) } post(t) { return this.send.call(this.env, t, "POST") } } return new class { constructor(t, e) { this.name = t, this.http = new s(this), this.data = null, this.dataFile = "box.dat", this.logs = [], this.isMute = !1, this.isNeedRewrite = !1, this.logSeparator = "\n", this.startTime = (new Date).getTime(), Object.assign(this, e), this.log("", `\ud83d\udd14${this.name}, \u5f00\u59cb!`) } isNode() { return "undefined" != typeof module && !!module.exports } isQuanX() { return "undefined" != typeof $task } isSurge() { return "undefined" != typeof $httpClient && "undefined" == typeof $loon } isLoon() { return "undefined" != typeof $loon } toObj(t, e = null) { try { return JSON.parse(t) } catch { return e } } toStr(t, e = null) { try { return JSON.stringify(t) } catch { return e } } getjson(t, e) { let s = e; const i = this.getdata(t); if (i) try { s = JSON.parse(this.getdata(t)) } catch { } return s } setjson(t, e) { try { return this.setdata(JSON.stringify(t), e) } catch { return !1 } } getScript(t) { return new Promise(e => { this.get({ url: t }, (t, s, i) => e(i)) }) } runScript(t, e) { return new Promise(s => { let i = this.getdata("@chavy_boxjs_userCfgs.httpapi"); i = i ? i.replace(/\n/g, "").trim() : i; let r = this.getdata("@chavy_boxjs_userCfgs.httpapi_timeout"); r = r ? 1 * r : 20, r = e && e.timeout ? e.timeout : r; const [o, h] = i.split("@"), a = { url: `http://${h}/v1/scripting/evaluate`, body: { script_text: t, mock_type: "cron", timeout: r }, headers: { "X-Key": o, Accept: "*/*" } }; this.post(a, (t, e, i) => s(i)) }).catch(t => this.logErr(t)) } loaddata() { if (!this.isNode()) return {}; { this.fs = this.fs ? this.fs : require("fs"), this.path = this.path ? this.path : require("path"); const t = this.path.resolve(this.dataFile), e = this.path.resolve(process.cwd(), this.dataFile), s = this.fs.existsSync(t), i = !s && this.fs.existsSync(e); if (!s && !i) return {}; { const i = s ? t : e; try { return JSON.parse(this.fs.readFileSync(i)) } catch (t) { return {} } } } } writedata() { if (this.isNode()) { this.fs = this.fs ? this.fs : require("fs"), this.path = this.path ? this.path : require("path"); const t = this.path.resolve(this.dataFile), e = this.path.resolve(process.cwd(), this.dataFile), s = this.fs.existsSync(t), i = !s && this.fs.existsSync(e), r = JSON.stringify(this.data); s ? this.fs.writeFileSync(t, r) : i ? this.fs.writeFileSync(e, r) : this.fs.writeFileSync(t, r) } } lodash_get(t, e, s) { const i = e.replace(/\[(\d+)\]/g, ".$1").split("."); let r = t; for (const t of i) if (r = Object(r)[t], void 0 === r) return s; return r } lodash_set(t, e, s) { return Object(t) !== t ? t : (Array.isArray(e) || (e = e.toString().match(/[^.[\]]+/g) || []), e.slice(0, -1).reduce((t, s, i) => Object(t[s]) === t[s] ? t[s] : t[s] = Math.abs(e[i + 1]) >> 0 == +e[i + 1] ? [] : {}, t)[e[e.length - 1]] = s, t) } getdata(t) { let e = this.getval(t); if (/^@/.test(t)) { const [, s, i] = /^@(.*?)\.(.*?)$/.exec(t), r = s ? this.getval(s) : ""; if (r) try { const t = JSON.parse(r); e = t ? this.lodash_get(t, i, "") : e } catch (t) { e = "" } } return e } setdata(t, e) { let s = !1; if (/^@/.test(e)) { const [, i, r] = /^@(.*?)\.(.*?)$/.exec(e), o = this.getval(i), h = i ? "null" === o ? null : o || "{}" : "{}"; try { const e = JSON.parse(h); this.lodash_set(e, r, t), s = this.setval(JSON.stringify(e), i) } catch (e) { const o = {}; this.lodash_set(o, r, t), s = this.setval(JSON.stringify(o), i) } } else s = this.setval(t, e); return s } getval(t) { return this.isSurge() || this.isLoon() ? $persistentStore.read(t) : this.isQuanX() ? $prefs.valueForKey(t) : this.isNode() ? (this.data = this.loaddata(), this.data[t]) : this.data && this.data[t] || null } setval(t, e) { return this.isSurge() || this.isLoon() ? $persistentStore.write(t, e) : this.isQuanX() ? $prefs.setValueForKey(t, e) : this.isNode() ? (this.data = this.loaddata(), this.data[e] = t, this.writedata(), !0) : this.data && this.data[e] || null } initGotEnv(t) { this.got = this.got ? this.got : require("got"), this.cktough = this.cktough ? this.cktough : require("tough-cookie"), this.ckjar = this.ckjar ? this.ckjar : new this.cktough.CookieJar, t && (t.headers = t.headers ? t.headers : {}, void 0 === t.headers.Cookie && void 0 === t.cookieJar && (t.cookieJar = this.ckjar)) } get(t, e = (() => { })) { t.headers && (delete t.headers["Content-Type"], delete t.headers["Content-Length"]), this.isSurge() || this.isLoon() ? (this.isSurge() && this.isNeedRewrite && (t.headers = t.headers || {}, Object.assign(t.headers, { "X-Surge-Skip-Scripting": !1 })), $httpClient.get(t, (t, s, i) => { !t && s && (s.body = i, s.statusCode = s.status), e(t, s, i) })) : this.isQuanX() ? (this.isNeedRewrite && (t.opts = t.opts || {}, Object.assign(t.opts, { hints: !1 })), $task.fetch(t).then(t => { const { statusCode: s, statusCode: i, headers: r, body: o } = t; e(null, { status: s, statusCode: i, headers: r, body: o }, o) }, t => e(t))) : this.isNode() && (this.initGotEnv(t), this.got(t).on("redirect", (t, e) => { try { if (t.headers["set-cookie"]) { const s = t.headers["set-cookie"].map(this.cktough.Cookie.parse).toString(); this.ckjar.setCookieSync(s, null), e.cookieJar = this.ckjar } } catch (t) { this.logErr(t) } }).then(t => { const { statusCode: s, statusCode: i, headers: r, body: o } = t; e(null, { status: s, statusCode: i, headers: r, body: o }, o) }, t => { const { message: s, response: i } = t; e(s, i, i && i.body) })) } post(t, e = (() => { })) { if (t.body && t.headers && !t.headers["Content-Type"] && (t.headers["Content-Type"] = "application/x-www-form-urlencoded"), t.headers && delete t.headers["Content-Length"], this.isSurge() || this.isLoon()) this.isSurge() && this.isNeedRewrite && (t.headers = t.headers || {}, Object.assign(t.headers, { "X-Surge-Skip-Scripting": !1 })), $httpClient.post(t, (t, s, i) => { !t && s && (s.body = i, s.statusCode = s.status), e(t, s, i) }); else if (this.isQuanX()) t.method = "POST", this.isNeedRewrite && (t.opts = t.opts || {}, Object.assign(t.opts, { hints: !1 })), $task.fetch(t).then(t => { const { statusCode: s, statusCode: i, headers: r, body: o } = t; e(null, { status: s, statusCode: i, headers: r, body: o }, o) }, t => e(t)); else if (this.isNode()) { this.initGotEnv(t); const { url: s, ...i } = t; this.got.post(s, i).then(t => { const { statusCode: s, statusCode: i, headers: r, body: o } = t; e(null, { status: s, statusCode: i, headers: r, body: o }, o) }, t => { const { message: s, response: i } = t; e(s, i, i && i.body) }) } } time(t) { let e = { "M+": (new Date).getMonth() + 1, "d+": (new Date).getDate(), "H+": (new Date).getHours(), "m+": (new Date).getMinutes(), "s+": (new Date).getSeconds(), "q+": Math.floor(((new Date).getMonth() + 3) / 3), S: (new Date).getMilliseconds() }; /(y+)/.test(t) && (t = t.replace(RegExp.$1, ((new Date).getFullYear() + "").substr(4 - RegExp.$1.length))); for (let s in e) new RegExp("(" + s + ")").test(t) && (t = t.replace(RegExp.$1, 1 == RegExp.$1.length ? e[s] : ("00" + e[s]).substr(("" + e[s]).length))); return t } msg(e = t, s = "", i = "", r) { const o = t => { if (!t) return t; if ("string" == typeof t) return this.isLoon() ? t : this.isQuanX() ? { "open-url": t } : this.isSurge() ? { url: t } : void 0; if ("object" == typeof t) { if (this.isLoon()) { let e = t.openUrl || t.url || t["open-url"], s = t.mediaUrl || t["media-url"]; return { openUrl: e, mediaUrl: s } } if (this.isQuanX()) { let e = t["open-url"] || t.url || t.openUrl, s = t["media-url"] || t.mediaUrl; return { "open-url": e, "media-url": s } } if (this.isSurge()) { let e = t.url || t.openUrl || t["open-url"]; return { url: e } } } }; this.isMute || (this.isSurge() || this.isLoon() ? $notification.post(e, s, i, o(r)) : this.isQuanX() && $notify(e, s, i, o(r))); let h = ["", "==============\ud83d\udce3\u7cfb\u7edf\u901a\u77e5\ud83d\udce3=============="]; h.push(e), s && h.push(s), i && h.push(i), console.log(h.join("\n")), this.logs = this.logs.concat(h) } log(...t) { t.length > 0 && (this.logs = [...this.logs, ...t]), console.log(t.join(this.logSeparator)) } logErr(t, e) { const s = !this.isSurge() && !this.isQuanX() && !this.isLoon(); s ? this.log("", `\u2757\ufe0f${this.name}, \u9519\u8bef!`, t.stack) : this.log("", `\u2757\ufe0f${this.name}, \u9519\u8bef!`, t) } wait(t) { return new Promise(e => setTimeout(e, t)) } done(t = {}) { const e = (new Date).getTime(), s = (e - this.startTime) / 1e3; this.log("", `\ud83d\udd14${this.name}, \u7ed3\u675f! \ud83d\udd5b ${s} \u79d2`), this.log(), (this.isSurge() || this.isQuanX() || this.isLoon()) && $done(t) } }(t, e) }
