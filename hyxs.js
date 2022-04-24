@@ -11,7 +11,7 @@ cron自己设置
 
 [rewrite_local]
 #火云邪神
-https://yezi.jiaaisi.cn/users url script-request-header hyxs.js
+https://yezi.jiaaisi.cn/users url script-request-header https://raw.githubusercontent.com/tigax/js/main/hyxs.js
 [MITM]
 hostname = yezi.jiaaisi.cn
 */
