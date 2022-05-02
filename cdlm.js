@@ -1,10 +1,10 @@
 /**
- * 地址: https://raw.githubusercontent.com/yml2213/javascript/master/cdlm/cdlm.js
+ * 地址: https://raw.githubusercontent.com/tigax/js/main/cdlm.js
  * 转载请留信息,谢谢
  * 
  * 吃对了嘛 小程序  
  * 
- * cron 35 7 * * *  yml2213_javascript_master/cdlm.js
+ * cron 35 7 * * *  tigax/js/main/cdlm.js
  * 
  * 5-2 完成 签到 ,转发 , 评论 ,看视频 任务   
  * 5-2 优化失效提示,测试通知功能
