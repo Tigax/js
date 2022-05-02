@@ -14,7 +14,7 @@ cron自己设置   一天一次即可
 
 [rewrite_local]
 #咸鱼翻身
-https://s76.yyyyy.run/api/user url script-request-header xyfs.js
+https://s76.yyyyy.run/api/user url script-request-header https://raw.githubusercontent.com/tigax/js/main/xyfs.js
 [MITM]
 hostname = s76.yyyyy.run
 */
